@@ -437,3 +437,199 @@ document.querySelectorAll('.chip[data-sym]').forEach(el => {{
     out = Path(output_path)
     out.write_text(html, encoding="utf-8")
     return str(out.resolve())
+
+
+# ── Top10 精简版 HTML 报告（用于企业微信附件）────────────────────────────────
+
+
+def generate_top10_report(
+    top10: list[dict],
+    db_path: str,
+    output_path: str = "report_top10.html",
+) -> str:
+    """生成 Top10 精简版 HTML 报告，适合作为企业微信附件发送。
+
+    每条股票显示：
+    - 编号、股票代码、名称、所属板块
+    - 砖型图柱状图（近60日）
+    - 形态匹配分、30日/90日超额收益预期
+
+    Args:
+        top10: Top10 股票信息列表，每条包含：
+               symbol, name, sector, strategy,
+               match_score, expected_30d, expected_90d,
+               brick_signal
+        db_path: SQLite 数据库路径（用于读取 K 线数据渲染砖图）
+        output_path: 输出 HTML 路径
+
+    Returns:
+        输出文件的绝对路径。
+    """
+    today_str = date.today().strftime("%Y-%m-%d")
+
+    # 为每只股票加载砖型图数据
+    cards_data = []
+    for i, s in enumerate(top10, 1):
+        symbol = s["symbol"]
+        try:
+            df = _load_stock_data(db_path, symbol, n_bars=120)
+            if len(df) < 10:
+                continue
+            df = _calc_indicators(df)
+            tail = df.tail(60).reset_index(drop=True)
+
+            dates  = tail["date"].tolist()
+            brick  = [round(v, 4) if not np.isnan(v) else 0.0 for v in tail["brick"]]
+            brick_prev = [0.0] + brick[:-1]
+            brick_colors = [
+                "#ef232a" if (b > p) else "#14b143"
+                for b, p in zip(brick, brick_prev)
+            ]
+            last = tail.iloc[-1]
+            prev = tail.iloc[-2] if len(tail) > 1 else last
+            pct = (last["close"] / prev["close"] - 1) * 100 if prev["close"] else 0.0
+        except Exception:
+            dates, brick, brick_colors, pct = [], [], [], 0.0
+
+        score   = s.get("match_score", 0.0) or 0.0
+        exp30   = s.get("expected_30d", 0.0) or 0.0
+        exp90   = s.get("expected_90d", 0.0) or 0.0
+
+        cards_data.append({
+            "rank":         i,
+            "symbol":       symbol,
+            "name":         s.get("name", symbol),
+            "sector":       s.get("sector", "未知板块"),
+            "strategy":     s.get("strategy", ""),
+            "brick_signal": s.get("brick_signal", False),
+            "pct":          round(float(pct), 2),
+            "match_score":  round(score, 4),
+            "expected_30d": round(exp30, 4),
+            "expected_90d": round(exp90, 4),
+            "dates":        dates,
+            "brick":        brick,
+            "brick_colors": brick_colors,
+        })
+
+    charts_json = json.dumps(cards_data, ensure_ascii=False)
+
+    html = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sequoia-X Top10 | {today_str}</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0}}
+  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+        background:#0d1117;color:#e6edf3;padding:16px}}
+  h1{{font-size:20px;font-weight:700;margin-bottom:4px}}
+  .sub{{font-size:13px;color:#8b949e;margin-bottom:20px}}
+  .card{{background:#161b22;border:1px solid #21262d;border-radius:10px;
+         padding:14px 16px;margin-bottom:14px}}
+  .card-header{{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}}
+  .rank{{width:28px;height:28px;border-radius:50%;background:#21262d;
+         display:flex;align-items:center;justify-content:center;
+         font-size:13px;font-weight:700;color:#f0c05a;flex-shrink:0}}
+  .rank.top3{{background:rgba(240,192,90,.2);color:#f0c05a}}
+  .name-block{{flex:1;min-width:0}}
+  .name-block .sym{{font-size:15px;font-weight:700;color:#f0f6fc}}
+  .name-block .cname{{font-size:13px;color:#8b949e;margin-top:1px}}
+  .sector-tag{{font-size:11px;padding:2px 8px;border-radius:10px;
+              background:rgba(88,166,255,.12);color:#58a6ff;white-space:nowrap}}
+  .strategy-tag{{font-size:11px;padding:2px 8px;border-radius:10px;
+                background:rgba(188,140,255,.12);color:#bc8cff;white-space:nowrap}}
+  .brick-tag{{font-size:11px;padding:2px 8px;border-radius:10px;
+             background:rgba(239,35,42,.12);color:#ef232a;white-space:nowrap}}
+  .pct-badge{{font-size:12px;padding:2px 8px;border-radius:10px;font-weight:600}}
+  .pct-up{{background:rgba(239,35,42,.15);color:#ef232a}}
+  .pct-dn{{background:rgba(20,177,67,.15);color:#14b143}}
+  .scores{{display:flex;gap:20px;margin-bottom:10px;flex-wrap:wrap}}
+  .score-item{{display:flex;flex-direction:column;align-items:center;min-width:70px}}
+  .score-item .lbl{{font-size:11px;color:#8b949e;margin-bottom:2px}}
+  .score-item .val{{font-size:18px;font-weight:700}}
+  .val-match{{color:#f0c05a}}
+  .val-pos{{color:#ef232a}}
+  .brick-wrap{{height:80px}}
+</style>
+</head>
+<body>
+<h1>📈 Sequoia-X 每日 Top10</h1>
+<div class="sub">生成时间：{today_str} &nbsp;·&nbsp; 按形态匹配分降序</div>
+<div id="app"></div>
+<script>
+const DATA = {charts_json};
+
+const app = document.getElementById('app');
+DATA.forEach(d => {{
+  const pctClass = d.pct >= 0 ? 'pct-up' : 'pct-dn';
+  const pctSign  = d.pct >= 0 ? '+' : '';
+  const rankClass = d.rank <= 3 ? 'rank top3' : 'rank';
+
+  const brickTag = d.brick_signal
+    ? '<span class="brick-tag">🧱 砖型图</span>' : '';
+
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    <div class="card-header">
+      <div class="${{rankClass}}">${{d.rank}}</div>
+      <div class="name-block">
+        <div class="sym">${{d.symbol}}</div>
+        <div class="cname">${{d.name}}</div>
+      </div>
+      <span class="sector-tag">${{d.sector}}</span>
+      <span class="strategy-tag">${{d.strategy}}</span>
+      ${{brickTag}}
+      <span class="pct-badge ${{pctClass}}">${{pctSign}}${{d.pct}}%</span>
+    </div>
+    <div class="scores">
+      <div class="score-item">
+        <span class="lbl">形态匹配</span>
+        <span class="val val-match">${{(d.match_score*100).toFixed(1)}}%</span>
+      </div>
+      <div class="score-item">
+        <span class="lbl">30日超额预期</span>
+        <span class="val val-pos">${{(d.expected_30d*100).toFixed(0)}}%</span>
+      </div>
+      <div class="score-item">
+        <span class="lbl">90日超额预期</span>
+        <span class="val val-pos">${{(d.expected_90d*100).toFixed(0)}}%</span>
+      </div>
+    </div>
+    <div class="brick-wrap" id="brick-${{d.symbol}}"></div>
+  `;
+  app.appendChild(card);
+
+  if (d.brick && d.brick.length > 0) {{
+    const chart = echarts.init(document.getElementById('brick-' + d.symbol), 'dark');
+    chart.setOption({{
+      backgroundColor: 'transparent',
+      grid: {{ top: 4, bottom: 20, left: 48, right: 8 }},
+      xAxis: {{
+        type: 'category', data: d.dates,
+        axisLabel: {{ fontSize: 9, interval: Math.floor(d.dates.length / 6) }},
+        axisLine: {{ lineStyle: {{ color: '#30363d' }} }}
+      }},
+      yAxis: {{
+        type: 'value', scale: true,
+        axisLabel: {{ fontSize: 9 }},
+        splitLine: {{ lineStyle: {{ color: '#21262d' }} }}
+      }},
+      tooltip: {{ trigger: 'axis', formatter: p => `砖型图: ${{p[0].value?.toFixed(2)}}` }},
+      series: [{{
+        type: 'bar', name: '砖型图', data: d.brick,
+        itemStyle: {{ color: params => d.brick_colors[params.dataIndex] }},
+        barMaxWidth: 8,
+      }}]
+    }});
+  }}
+}});
+</script>
+</body>
+</html>"""
+
+    out = Path(output_path)
+    out.write_text(html, encoding="utf-8")
+    return str(out.resolve())

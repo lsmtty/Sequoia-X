@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 任务唯一标识 -->
+    <key>Label</key>
+    <string>com.sequoia-x.daily</string>
+
+    <!-- 执行命令：使用 venv 内 python，--notify 推送企业微信，--no-open 不弹浏览器 -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/lisimin/ai-project/Sequoia-X-master/.venv/bin/python</string>
+        <string>/Users/lisimin/ai-project/Sequoia-X-master/run_zhixing_test.py</string>
+        <string>--notify</string>
+        <string>--no-open</string>
+    </array>
+
+    <!-- 工作目录 -->
+    <key>WorkingDirectory</key>
+    <string>/Users/lisimin/ai-project/Sequoia-X-master</string>
+
+    <!-- 每天 15:35 触发（周一至周五收盘后5分钟） -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Weekday</key><integer>1</integer>
+            <key>Hour</key><integer>15</integer>
+            <key>Minute</key><integer>35</integer>
+        </dict>
+        <dict>
+            <key>Weekday</key><integer>2</integer>
+            <key>Hour</key><integer>15</integer>
+            <key>Minute</key><integer>35</integer>
+        </dict>
+        <dict>
+            <key>Weekday</key><integer>3</integer>
+            <key>Hour</key><integer>15</integer>
+            <key>Minute</key><integer>35</integer>
+        </dict>
+        <dict>
+            <key>Weekday</key><integer>4</integer>
+            <key>Hour</key><integer>15</integer>
+            <key>Minute</key><integer>35</integer>
+        </dict>
+        <dict>
+            <key>Weekday</key><integer>5</integer>
+            <key>Hour</key><integer>15</integer>
+            <key>Minute</key><integer>35</integer>
+        </dict>
+    </array>
+
+    <!-- 日志输出 -->
+    <key>StandardOutPath</key>
+    <string>/Users/lisimin/ai-project/Sequoia-X-master/logs/sequoia_daily.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/lisimin/ai-project/Sequoia-X-master/logs/sequoia_daily_err.log</string>
+
+    <!-- 环境变量（企业微信 Key 在这里配置） -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>WECOM_WEBHOOK_KEY</key>
+        <string>YOUR_WECOM_WEBHOOK_KEY_HERE</string>
+        <key>FEISHU_WEBHOOK_URL</key>
+        <string>https://placeholder.local</string>
+    </dict>
+
+    <!-- 登录后立即加载（不需要用户界面） -->
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
