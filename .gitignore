@@ -16,8 +16,6 @@ ENV/
 .vscode/
 .kiro
 
-# 数据库文件
-data/*.db
 
 # 环境变量
 .env
